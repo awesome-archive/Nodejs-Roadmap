@@ -1,4 +1,4 @@
-# 日志模块
+# 日志模块实践
 
 ## 快速导航
 - 日志记录收集
@@ -6,17 +6,27 @@
     - `[Logger]` [log4js 日志记录工具](https://github.com/log4js-node/log4js-node)
     - `[Logger]` [ELK--开源的日志分析系统](https://www.elastic.co/cn/products)
     - `[Logger]` [winston日志模块](https://github.com/winstonjs/winston)
-- 基于 egg-logger 定制日志中间件实现日志链路追踪
+- 基于Egg框架的日志链路追踪实践
     - `[Logger-Custom]` [需求背景](#需求背景)
     - `[Logger-Custom]` [自定义日志插件开发](#自定义日志插件开发)
     - `[Logger-Custom]` [项目扩展](#项目扩展)
     - `[Logger-Custom]` [项目应用](#项目应用)
+    - `[ContextFormatter]` [contextFormatter自定义日志格式](#contextFormatter自定义日志格式)
+    - `[Logrotator]` [日志切割](#日志切割)
 
-## 基于 egg-logger 定制日志中间件实现日志链路追踪
+## 基于Egg框架的日志链路追踪实践
 
 ### 需求背景
 
-API接口服务接收到调用请求，根据调用者传的traceId (如果没有自己生成)，在该次调用链中处理业务时，如需打印日志，日志信息按照约定的规范进行打印，并记录traceId，实现日志链路追踪。
+实现全链路日志追踪，便于日志监控、问题排查、接口响应耗时数据统计等，首先 API 接口服务接收到调用方请求，根据调用方传的 traceId，在该次调用链中处理业务时，如需打印日志的，日志信息按照约定的规范进行打印，并记录 traceId，实现日志链路追踪。
+
+- **日志路径约定**
+
+```
+/var/logs/${projectName}/bizLog/${projectName}-yyyyMMdd.log
+```
+
+- **日志格式约定**
 
 ```bash
 日志时间[]traceId[]服务端IP[]客户端IP[]日志级别[]日志内容
@@ -32,9 +42,7 @@ egg-logger 提供了多种传输通道，我们的需求主要是对请求的业
 
 - **编写logger.js**
 
-```
-egg-logger-custom/lib/logger.js
-```
+> egg-logger-custom/lib/logger.js
 
 ```js
 const moment = require('moment');
@@ -96,9 +104,7 @@ module.exports = AppTransport;
 
 - **工具**
 
-```
-egg-logger-custom/lib/utils.js
-```
+> egg-logger-custom/lib/utils.js
 
 ```js
 const interfaces = require('os').networkInterfaces();
@@ -129,6 +135,7 @@ module.exports = {
 
     /**
      * 获取当前请求客户端IP
+     * 不安全的写法
      */
     clientIPAddress: req => {
         const address = req.headers['x-forwarded-for'] || // 判断是否有反向代理 IP
@@ -137,9 +144,15 @@ module.exports = {
         req.connection.socket.remoteAddress;
 
         return address.replace(/::ffff:/ig, '');
-    }
+    },
+
+    clientIPAddress: ctx => {    
+        return ctx.ip;
+    },
 }
 ```
+
+**注意**：以上获取当前请求客户端IP的方式，如果你需要对用户的 IP 做限流、防刷限制，请不要使用如上方式，参见 [科普文：如何伪造和获取用户真实 IP ？](https://www.yuque.com/egg/nodejs/coopsc)，在 Egg.js 里你也可以通过 ctx.ip 来获取，参考 [前置代理模式](https://eggjs.org/zh-cn/tutorials/proxy.html)。
 
 - **初始化 Logger**
 
@@ -156,7 +169,7 @@ module.exports = (ctx, options) => {
 
     logger.set('file', new AppTransport({
         level: options.fileLoggerLevel || 'INFO',
-        file: `/var/logs/${options.appName}.log`,
+        file: `/var/logs/${options.appName}/bizLog/${options.appName}.log`,
     }, ctx));
 
     logger.set('console', new ConsoleTransport({
@@ -176,7 +189,7 @@ module.exports = (ctx, options) => {
 新建 ``` app/extend/context.js ``` 文件
 
 ```js
-const AppLogger = require('@boluome/egg-logger');
+const AppLogger = require('egg-logger-custom'); // 上面定义的中间件
 
 module.exports = {
     get logger() { // 名字自定义 也可以是 customLogger
@@ -217,7 +230,138 @@ class ExampleController extends Controller {
 2019/05/30 01:50:21[]d373c38a-344b-4b36-b931-1e8981aef14f[]192.168.1.20[]221.69.245.153[]INFO[]测试
 ```
 
-**扩展**：基于以上日志格式，可以采用 ELK 做日志搜集、分析、检索。
+## contextFormatter自定义日志格式
 
+Egg-Logger 最新版本支持通过 contextFormatter 函数自定义日志格式，参见之前 [PR：support contextFormatter #51](https://github.com/eggjs/egg-logger/pull/51) 
+
+应用也很简单，通过配置 contextFormatter 函数即可，以下是简单的应用
+
+```js
+config.logger = {
+    contextFormatter: function(meta) {
+        console.log(meta);
+        return [
+            meta.date,
+            meta.message
+        ].join('[]')
+    },
+    ...
+};
+```
+
+同样的在你的业务里对于需要打印日志的地方，和之前一样
+
+```js
+ctx.logger.info('这是一个测试数据');
+```
+
+输出结果如下所示：
+
+```
+2019-06-04 12:20:10,421[]这是一个测试数据
+```
+
+## 日志切割
+
+框架提供了 [egg-logrotator](https://github.com/eggjs/egg-logrotator) 中间件，默认切割为按天切割，其它方式可参考官网自行配置。
+
+- **框架默认日志路径**
+
+> egg-logger 模块 lib/egg/config/config.default.js
+
+```js
+config.logger = {
+    dir: path.join(appInfo.root, 'logs', appInfo.name),
+    ...
+};
+```
+
+- **自定义日志目录**
+
+很简单按照我们的需求在项目配置文件重新定义 logger 的 dir 路径
+
+```js
+config.logger = {
+    dir: /var/logs/test/bizLog/
+}
+```
+
+这样是否就可以呢？按照我们上面自定义的日志文件名格式（```${projectName}-yyyyMMdd.log```），貌似是不行的，在日志分割过程中默认的文件名格式为 ``` .log.YYYY-MM-DD ```，参考源码
+
+> [https://github.com/eggjs/egg-logrotator/blob/master/app/lib/day_rotator.js](https://github.com/eggjs/egg-logrotator/blob/master/app/lib/day_rotator.js)
+
+```js
+ _setFile(srcPath, files) {
+    // don't rotate logPath in filesRotateBySize
+    if (this.filesRotateBySize.indexOf(srcPath) > -1) {
+      return;
+    }
+
+    // don't rotate logPath in filesRotateByHour
+    if (this.filesRotateByHour.indexOf(srcPath) > -1) {
+      return;
+    }
+
+    if (!files.has(srcPath)) {
+      // allow 2 minutes deviation
+      const targetPath = srcPath + moment()
+        .subtract(23, 'hours')
+        .subtract(58, 'minutes')
+        .format('.YYYY-MM-DD'); // 日志格式定义
+      debug('set file %s => %s', srcPath, targetPath);
+      files.set(srcPath, { srcPath, targetPath });
+    }
+ }
+```
+
+- **日志分割扩展**
+
+中间件 [egg-logrotator](https://github.com/eggjs/egg-logrotator) 预留了扩展接口，对于自定义的日志文件名，可以用框架提供的 app.LogRotator 做一个定制。
+
+> app/schedule/custom.js
+
+```js
+const moment = require('moment');
+
+module.exports = app => {
+    const rotator = getRotator(app);
+
+    return {
+        schedule: {
+            type: 'worker', // only one worker run this task
+            cron: '1 0 0 * * *', // run every day at 00:00
+        },
+        async task() {
+            await rotator.rotate();
+        }
+    };
+};
+
+function getRotator(app) {
+    class CustomRotator extends app.LogRotator {
+        async getRotateFiles() {
+            const files = new Map();
+            const srcPath = `/var/logs/test/bizLog/test.log`;
+            const targetPath = `/var/logs/test/bizLog/test-${moment().subtract(1, 'days').format('YYYY-MM-DD')}.log`;
+            files.set(srcPath, { srcPath, targetPath });
+            return files;
+        }
+    }
+
+    return new CustomRotator({ app });
+}
+```
+
+经过分割之后文件展示如下：
+
+```bash
+$ ls -lh /var/logs/test/bizLog/
+total 188K
+-rw-r--r-- 1 root root 135K Jun  1 11:00 test-2019-06-01.log
+-rw-r--r-- 1 root root  912 Jun  2 09:44 test-2019-06-02.log
+-rw-r--r-- 1 root root  40K Jun  3 11:49 test.log
+```
+
+**扩展**：基于以上日志格式，可以采用 ELK 做日志搜集、分析、检索。
 
 

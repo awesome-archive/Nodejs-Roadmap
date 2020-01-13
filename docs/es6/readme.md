@@ -115,6 +115,7 @@ function last(){
 - **构造函数 ES5声明对象 情况一**
 
 > 第一个参数是字符; 第二个是修饰符
+
 ```js
 let regex = new RegExp('xyz', 'i');
 
@@ -124,6 +125,7 @@ console.log(regex.test('xyz123'), regex.test('xyZ123')); // true true
 - **构造函数 ES5声明对象 情况二**
 
 > 第一个参数是正则表达式; 但是此时不接受第二个参数是一个修饰符，否则会报错
+
 ```js
 let regex2 = new RegExp(/xyz/i); // 正确
 let regex3 = new RegExp(/xyz/i, 'i'); // 错误；Uncaught TypeError: Cannot supply flags when constructing one RegExp 
@@ -204,6 +206,7 @@ console.log(regex3.flags); // i
 ```
 
 - **模板字符串**
+
 ```javascript
 {
   let name = "张三";
@@ -216,14 +219,14 @@ console.log(regex3.flags); // i
   console.log(String.raw`Hi\n${1+2}`);//Hi\n3
   console.log(`Hi\n${1+2}`);
 }
-
 ```
 
 - **标签模板**
 
 > 标签模板其实不是模板，而是函数调用的一种特殊形式。“标签”指的是函数，紧跟在后面的模板字符串就是它的参数。
 
-```两个作用：```第一，在过滤html字符串的时候防止xss攻击用这个处理，第二，可以用于多语言转换
+**两个作用：** 第一在过滤 html 字符串的时候防止 xss 攻击用这个处理，第二可以用于多语言转换
+
 ```javascript
 {
   let user = {
@@ -239,7 +242,13 @@ console.log(regex3.flags); // i
 ```
 
 - **新增方法(10种)**
-padStart()、padEnd()这两个方法是ES7的草案中提案的，在ES6中使用，需要安装库 ```npm install babel-polyfill --save-dev``` 打补丁，处理兼容性,在项目中引入 ```import 'babel-polyfill'```
+
+padStart()、padEnd() 这两个方法是 ES7 的草案中提案的，在 ES6 中使用，需要安装库 ```npm install babel-polyfill --save-dev``` 打补丁，处理兼容性，在项目中引入 babel-polyfill
+
+```
+import 'babel-polyfill'
+```
+
 ```javascript
 {
   let str="string";
@@ -537,6 +546,7 @@ console.log(d); //["a", "b", "c", "d"]
 #### 对象扩展
 
 - **简洁表示法**
+
 ```js
 {
   let o=1;
@@ -570,7 +580,8 @@ console.log(d); //["a", "b", "c", "d"]
 ```
 
 - **属性表达式**
-```javascript
+
+```js
 {
   // 属性表达式
   let a='b';
